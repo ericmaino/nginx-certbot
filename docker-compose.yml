@@ -1,21 +1,50 @@
 version: '3'
 
 services:
+  certbot:
+    build:
+      context: ./certbot
+    environment:
+      DOMAINS: ${DOMAIN}
+      RSA_KEY_SIZE: 4096
+      EMAIL: ${EMAIL}
+      STAGING: ${STAGING:-1}
+    volumes:
+      - certbot-www:/var/www/certbot
+      - lets-encrypt:/etc/letsencrypt
+
   nginx:
     image: nginx:1.15-alpine
     restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+      INTERNAL_URL: http://app:8000
     volumes:
-      - ./data/nginx:/etc/nginx/conf.d
-      - ./data/certbot/conf:/etc/letsencrypt
-      - ./data/certbot/www:/var/www/certbot
+      - nginx-conf:/etc/nginx/conf.d
+      - certbot-www:/var/www/certbot
+      - lets-encrypt:/etc/letsencrypt
+      - ./start-nginx.sh:/start.sh
     ports:
       - "80:80"
       - "443:443"
-    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
-  certbot:
-    image: certbot/certbot
-    restart: unless-stopped
-    volumes:
-      - ./data/certbot/conf:/etc/letsencrypt
-      - ./data/certbot/www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    command: "/bin/sh /start.sh"
+
+  app:
+    image: sxmichael/requestbin
+    environment:
+        REALM: prod
+        REDIS_URL: "//redis:6379"
+    links:
+        - redis
+    ports:
+        - 8000:8000
+    restart: always
+
+  redis:
+      restart: always
+      image: redis
+
+volumes:
+  lets-encrypt:
+  certbot-www:
+  nginx-conf:
